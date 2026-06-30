@@ -91,6 +91,7 @@ and the run cannot complete.
 
 - Do not store full draft prose in logs.
 - Do not store full packet text unless needed for a failure reason.
-- Store paths, validation reports, counts, warnings, and degraded assumptions.
+- Store paths, validation reports, counts, warnings, compactness stats, and
+  degraded assumptions.
 - The final completed line must be last. If a pending or partial line was
   written earlier, append a new completed line after recovery succeeds.

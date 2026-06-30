@@ -12,14 +12,18 @@ Write or verify files in this order:
 2. packets/<padded_id>.json
 3. chapters/<padded_id>.md
 4. reviews/<padded_id>.md
-5. cards/<padded_id>.json
-6. logs/runs.jsonl                 (append pending/commit record if needed)
-7. projections/*.json              (run rebuild_projections.py --write)
-8. logs/runs.jsonl                 (append completed or failed final record)
+5. validate review                 (run validate_review.py)
+6. cards/<padded_id>.json
+7. validate card                   (run validate_card.py)
+8. projections/*.json              (run rebuild_projections.py --write)
+9. logs/runs.jsonl                 (append completed or partial final record)
 ```
 
 If a run writes chapter prose but fails before a valid card, treat the run as
 `partial_commit`. Do not delete written artifacts.
+
+Commit in this document means writing Novello chapter artifacts to disk. It does
+not mean `git commit`.
 
 ## Status Model
 
@@ -50,8 +54,8 @@ cannot complete.
 
 ### completed
 
-Use only after chapter, review, card, final log append, and projection rebuild
-all succeed.
+Use only after chapter, review, card, card validation, projection rebuild, and
+final log append all succeed.
 
 ## Recovery Boundaries
 
@@ -60,9 +64,9 @@ all succeed.
 - Do not rewrite chapter prose unless the user explicitly asks.
 - If the card is invalid, fix card only when the draft evidence supports the
   fix. Otherwise revise the draft under user instruction.
-- If projection rebuild fails after a valid card, keep the card and log
-  `partial_commit`; recovery should rebuild projections after the issue is
-  fixed.
+- If projection rebuild fails after a valid card, keep the card and append a
+  `partial_commit` log record; recovery should rebuild projections after the
+  issue is fixed.
 
 ## Final Verification
 
@@ -70,11 +74,17 @@ Before reporting success:
 
 1. `chapters/<id>.md`, `reviews/<id>.md`, and `cards/<id>.json` exist and are
    non-empty.
-2. `scripts/validate_card.py` passes.
-3. `scripts/rebuild_projections.py --write` passes.
-4. The last non-empty line in `logs/runs.jsonl` parses as JSON with
+2. `scripts/validate_review.py` passes.
+3. `scripts/validate_card.py` passes.
+4. `scripts/rebuild_projections.py --write` passes.
+   Do not use ordinary packet validation as a post-commit check for the same
+   chapter; if auditing a completed chapter's packet, use `validate_packet.py
+   --rebuild-as-of`.
+5. Append the completed run log with `scripts/append_run_log.py`, passing saved
+   packet, card, and projection reports whose `passed` value is `true`.
+6. The last non-empty line in `logs/runs.jsonl` parses as JSON with
    `status: "completed"`, matching `chapter_id`, and matching `run_id`.
-5. Projection files exist and parse as JSON.
+7. Projection files exist and parse as JSON.
 
 ## User Report
 

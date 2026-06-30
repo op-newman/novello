@@ -21,7 +21,16 @@ phases, or letting state drift across a long manuscript.
 
 ## What It Does
 
-Novello guides Codex through a complete chapter run:
+Novello supports two connected workflows.
+
+Project bootstrap turns a loose idea into project front matter:
+
+1. Explore the user's creative direction through conversation.
+2. Converge on a project brief.
+3. Materialize `story_bible.json`, `style_guide.md`, global/arc plans, and the
+   first chapter plan after user confirmation.
+
+Chapter run guides Codex through a complete chapter:
 
 1. Rebuild generated projections from immutable chapter cards.
 2. Create a chapter contract that defines what may change.
@@ -50,7 +59,8 @@ project/
 ```
 
 See [references/project-layout.md](references/project-layout.md) for the full
-layout.
+layout and [references/project-bootstrap.md](references/project-bootstrap.md)
+for the interactive bootstrap protocol.
 
 ## Install As A Codex Skill
 
@@ -68,8 +78,14 @@ The bundled scripts provide deterministic guardrails:
 
 ```bash
 python scripts/rebuild_projections.py --project-root <project_root> --write
+python scripts/generate_chapter_plan.py --project-root <project_root> --chapter-id <id> --write
 python scripts/validate_packet.py --project-root <project_root> --chapter-id <id>
+python scripts/validate_review.py --project-root <project_root> --chapter-id <id>
 python scripts/validate_card.py --project-root <project_root> --chapter-id <id>
+python scripts/suggest_evidence.py --project-root <project_root> --chapter-id <id> --query <term>
+python scripts/append_run_log.py --project-root <project_root> --chapter-id <id> \
+  --packet-report <packet_report.json> --card-report <card_report.json> \
+  --projection-report <projection_report.json>
 ```
 
 Scripts validate structure and continuity boundaries. They do not judge prose

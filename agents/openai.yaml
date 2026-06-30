@@ -1,3 +1,4 @@
-display_name: Novello
-short_description: Contract-first novel memory.
-default_prompt: Use Novello to continue the long-form novel with a contract, packet, chapter card, and generated projections.
+interface:
+  display_name: "Novello"
+  short_description: "Contract-first novel memory."
+  default_prompt: "Use $novello to develop or continue a long-form novel."

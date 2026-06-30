@@ -6,6 +6,21 @@ from pathlib import Path
 from typing import Any
 
 
+class DuplicateKeyError(ValueError):
+    def __init__(self, key: str) -> None:
+        self.key = key
+        super().__init__(f"Duplicate JSON key: {key}")
+
+
+def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateKeyError(key)
+        result[key] = value
+    return result
+
+
 def force_utf8_stdio() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -16,7 +31,15 @@ def force_utf8_stdio() -> None:
 
 def read_json(path: Path, default: Any | None = None) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
+        data = path.read_bytes()
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+                text = data.decode("utf-16")
+            else:
+                raise
+        return json.loads(text, object_pairs_hook=reject_duplicate_keys)
     except FileNotFoundError:
         if default is not None:
             return default
@@ -48,6 +71,9 @@ def load_cards(project_root: Path) -> tuple[list[dict[str, Any]], list[dict[str,
     for path in sorted(cards_dir.glob("*.json")):
         try:
             card = read_json(path)
+        except DuplicateKeyError as exc:
+            errors.append(issue("card_json_duplicate_key", f"Card JSON has duplicate key: {exc.key}", path=str(path)))
+            continue
         except json.JSONDecodeError as exc:
             errors.append(issue("card_json_invalid", f"Card JSON is invalid: {exc}", path=str(path)))
             continue

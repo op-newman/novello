@@ -31,21 +31,48 @@ def ensure_thread(threads: dict[str, Any], thread_id: str) -> dict[str, Any]:
     )
 
 
-def rebuild(project_root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
+def card_evidence_pool(card: dict[str, Any]) -> dict[str, str]:
+    pool: dict[str, str] = {}
+    for item in card.get("evidence", []) or []:
+        if not isinstance(item, dict):
+            continue
+        evidence_id = item.get("id")
+        quote = item.get("quote")
+        if isinstance(evidence_id, str) and evidence_id.strip() and isinstance(quote, str) and quote.strip():
+            pool[evidence_id.strip()] = quote.strip()
+    return pool
+
+
+def evidence_quote(item: dict[str, Any], pool: dict[str, str], ref_field: str = "evidence_ref") -> Any:
+    ref = item.get(ref_field)
+    if isinstance(ref, str) and ref.strip():
+        return pool.get(ref.strip())
+    return None
+
+
+def projection_obligation(obligation: dict[str, Any], evidence: dict[str, str]) -> dict[str, Any]:
+    item = dict(obligation)
+    planted = evidence_quote(item, evidence, ref_field="planted_evidence_ref")
+    if isinstance(planted, str) and planted.strip():
+        item["planted_evidence"] = planted
+        item.pop("planted_evidence_ref", None)
+    return item
+
+
+def rebuild_from_cards(cards: list[dict[str, Any]], source_errors: list[dict[str, str]] | None = None) -> tuple[dict[str, Any], list[dict[str, str]]]:
     entities: dict[str, Any] = {}
     relationships: dict[str, Any] = {}
     threads: dict[str, Any] = {}
     obligations: list[dict[str, Any]] = []
     reader_memory: list[dict[str, Any]] = []
-    errors: list[dict[str, str]] = []
-    cards, source_errors = load_cards(project_root)
-    errors.extend(source_errors)
+    errors: list[dict[str, str]] = list(source_errors or [])
 
     for card in cards:
         raw_chapter_id = card.get("chapter_id")
         if not isinstance(raw_chapter_id, int) or raw_chapter_id <= 0:
             continue
         chapter_id = raw_chapter_id
+        evidence = card_evidence_pool(card)
 
         for event in card.get("events", []) or []:
             if not isinstance(event, dict):
@@ -92,11 +119,41 @@ def rebuild(project_root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
             if not isinstance(change, dict):
                 continue
             pair = change.get("pair")
-            to_state = change.get("to")
-            if not (isinstance(pair, list) and len(pair) == 2 and isinstance(to_state, str)):
-                errors.append(issue("invalid_relationship_change", "Relationship change needs pair[2] and to."))
+            if not (isinstance(pair, list) and len(pair) == 2 and all(isinstance(item, str) for item in pair)):
+                errors.append(issue("invalid_relationship_change", "Relationship change needs pair[2]."))
                 continue
-            relationships[pair_key(pair)] = {"pair": pair, "phase": to_state, "last_changed_chapter": chapter_id}
+            key = pair_key(pair)
+
+            if change.get("type") == "relationship_beat":
+                existing = relationships.get(key)
+                if not isinstance(existing, dict):
+                    current_phase = change.get("current_phase")
+                    existing = {
+                        "pair": pair,
+                        "phase": current_phase if isinstance(current_phase, str) and current_phase.strip() else None,
+                        "last_changed_chapter": None,
+                    }
+                    relationships[key] = existing
+                beats = existing.get("recent_beats")
+                if not isinstance(beats, list):
+                    beats = []
+                beats.append(
+                    {
+                        "chapter_id": chapter_id,
+                        "direction": change.get("direction"),
+                        "intensity": change.get("intensity"),
+                        "evidence": evidence_quote(change, evidence),
+                    }
+                )
+                existing["recent_beats"] = beats[-5:]
+                continue
+
+            to_state = change.get("to")
+            if not isinstance(to_state, str):
+                errors.append(issue("invalid_relationship_change", "Relationship change needs a 'to' phase."))
+                continue
+            # A phase transition consumes any accumulated beats that justified it.
+            relationships[key] = {"pair": pair, "phase": to_state, "last_changed_chapter": chapter_id}
 
         for event in card.get("thread_events", []) or []:
             if not isinstance(event, dict):
@@ -131,7 +188,7 @@ def rebuild(project_root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
 
         for obligation in card.get("obligations_out", []) or []:
             if isinstance(obligation, dict):
-                item = dict(obligation)
+                item = projection_obligation(obligation, evidence)
                 item.setdefault("source_chapter", chapter_id)
                 item.setdefault("status", "open")
                 obligations.append(item)
@@ -150,6 +207,11 @@ def rebuild(project_root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
     return projection, errors
 
 
+def rebuild(project_root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    cards, source_errors = load_cards(project_root)
+    return rebuild_from_cards(cards, source_errors)
+
+
 def main() -> int:
     force_utf8_stdio()
     parser = argparse.ArgumentParser()
@@ -159,7 +221,7 @@ def main() -> int:
 
     project_root = Path(args.project_root)
     projection, errors = rebuild(project_root)
-    if args.write:
+    if args.write and not errors:
         write_json(project_root / "projections" / "entities.current.json", projection["entities"])
         write_json(project_root / "projections" / "relationships.current.json", projection["relationships"])
         write_json(project_root / "projections" / "threads.current.json", projection["threads"])
@@ -170,6 +232,7 @@ def main() -> int:
         "schema_version": 1,
         "passed": not errors,
         "errors": errors,
+        "wrote_projections": bool(args.write and not errors),
         "stats": {
             "entities": len(projection["entities"]),
             "relationships": len(projection["relationships"]),

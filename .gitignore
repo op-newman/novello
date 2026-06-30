@@ -7,4 +7,5 @@ __pycache__/
 Thumbs.db
 tests/.tmp/
 projections/
+novels/
 *.log
